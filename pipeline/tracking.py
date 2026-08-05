@@ -116,7 +116,12 @@ def train_and_track(model_name, df, features, n_splits=5, min_train_fraction=0.5
             {"mean": scaler.mean_.to_dict(), "std": scaler.std_.to_dict()}, "scaler.json"
         )
 
-        mlflow.pytorch.log_model(model, artifact_path="model")
+        # Pin pickle serialization explicitly: newer MLflow defaults to the
+        # 'pt2' traced-graph format, which needs an input_example and traces
+        # model.forward via torch.export -- QLSTM's forward pass runs actual
+        # quantum-circuit simulation through Pennylane's TorchLayer, which
+        # isn't the kind of code torch.export tracing reliably handles.
+        mlflow.pytorch.log_model(model, artifact_path="model", serialization_format="pickle")
         model_uri = f"runs:/{run.info.run_id}/model"
         registry_name = REGISTRY_NAME[model_name]
         registered = mlflow.register_model(model_uri, registry_name)
