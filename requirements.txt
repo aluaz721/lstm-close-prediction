@@ -1,0 +1,14 @@
+# Dependencies for qlstm_stock, pipeline/, scripts/, and backend/.
+# example/Data_collection.ipynb pulls in its own separate, larger set of packages
+# (yfinance, statsmodels, transformers, etc. for the original historical feature
+# engineering) and is not covered by this file.
+numpy
+pandas
+torch
+pennylane
+matplotlib
+pyarrow
+yfinance
+mlflow
+fastapi
+uvicorn
