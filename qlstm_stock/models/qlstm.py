@@ -64,6 +64,13 @@ class QLSTMCell(torch.nn.Module):
 
         def VQC(features, weights, wires_type):
             # Preprocess input data to encode the initial state.
+            # Newer PennyLane versions pass TorchLayer's input straight through
+            # to the QNode instead of stripping the (batch=1) leading dim the
+            # way older versions did, so `features` can arrive as either
+            # shape (n_qubits,) or (1, n_qubits). Flatten defensively -- this
+            # architecture always operates on a single sample's n_qubits-dim
+            # vector regardless.
+            features = features.reshape(-1)
             ry_params = [torch.arctan(feature) for feature in features]
             rz_params = [torch.arctan(feature**2) for feature in features]
             for i in range(self.n_qubits):
