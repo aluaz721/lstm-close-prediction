@@ -49,6 +49,8 @@ def run_walk_forward_validation(
     gap=0,
     seed=101,
     verbose=False,
+    on_fold_start=None,
+    on_fold_end=None,
 ):
     """Run leakage-safe walk-forward validation for a single model.
 
@@ -57,6 +59,11 @@ def run_walk_forward_validation(
     (re)trained from scratch so later folds don't get an unfair head start
     from earlier folds' weights. Each fold yields a genuinely out-of-sample
     RMSE/MAE on the original price scale.
+
+    `on_fold_start(fold_idx, n_train, n_test)` and `on_fold_end(FoldResult)`
+    are optional progress hooks -- useful for callers (e.g. the live
+    pipeline) that want fold-level progress output without the per-epoch
+    detail `verbose` turns on for every fold.
     """
     model_kwargs = dict(model_kwargs or {})
     optimizer_kwargs = dict(optimizer_kwargs or {"lr": 1e-3})
@@ -66,6 +73,9 @@ def run_walk_forward_validation(
     for wf_fold in walk_forward_splits(
         df, n_splits=n_splits, min_train_fraction=min_train_fraction, gap=gap
     ):
+        if on_fold_start is not None:
+            on_fold_start(wf_fold.fold, len(wf_fold.train), len(wf_fold.test))
+
         torch.manual_seed(seed)
 
         scaler = Standardizer().fit(wf_fold.train)
@@ -106,6 +116,8 @@ def run_walk_forward_validation(
             mae=mae(actual, predictions),
         )
         fold_results.append(result)
+        if on_fold_end is not None:
+            on_fold_end(result)
         if verbose:
             print(f"[{model_name}] fold {result.fold}: RMSE={result.rmse:.4f} MAE={result.mae:.4f}")
 

@@ -67,6 +67,17 @@ def train_and_track(model_name, df, features, n_splits=5, min_train_fraction=0.5
     # column would also fail to JSON-serialize when the scaler is logged below.
     trainable = df.dropna(subset=[TARGET]).drop(columns=["Date"]).reset_index(drop=True)
 
+    print(f"[{model_name}] starting walk-forward validation ({n_splits} folds, {len(trainable)} usable rows)")
+
+    def _on_fold_start(fold_idx, n_train, n_test):
+        print(f"[{model_name}]   fold {fold_idx + 1}/{n_splits}: training on {n_train} rows, testing on {n_test}...")
+
+    def _on_fold_end(result):
+        print(
+            f"[{model_name}]   fold {result.fold + 1}/{n_splits} done: "
+            f"RMSE={result.rmse:.4f} MAE={result.mae:.4f}"
+        )
+
     _ensure_experiment()
     with mlflow.start_run(run_name=model_name) as run:
         mlflow.log_params(
@@ -92,6 +103,8 @@ def train_and_track(model_name, df, features, n_splits=5, min_train_fraction=0.5
             num_epochs=NUM_EPOCHS,
             n_splits=n_splits,
             min_train_fraction=min_train_fraction,
+            on_fold_start=_on_fold_start,
+            on_fold_end=_on_fold_end,
             **config,
         )
         for r in fold_results:
@@ -99,6 +112,11 @@ def train_and_track(model_name, df, features, n_splits=5, min_train_fraction=0.5
             mlflow.log_metric("fold_mae", r.mae, step=r.fold)
 
         summary = aggregate_fold_results(fold_results)
+        print(
+            f"[{model_name}] walk-forward done: "
+            f"RMSE={summary['rmse']['mean']:.4f}+/-{summary['rmse']['std']:.4f} "
+            f"MAE={summary['mae']['mean']:.4f}+/-{summary['mae']['std']:.4f}"
+        )
         mlflow.log_metrics(
             {
                 "walk_forward_rmse_mean": summary["rmse"]["mean"],
@@ -108,7 +126,9 @@ def train_and_track(model_name, df, features, n_splits=5, min_train_fraction=0.5
             }
         )
 
+        print(f"[{model_name}] training deployable model on full history ({NUM_EPOCHS} epochs)...")
         model, scaler = _fit_deployable_model(model_name, config, trainable, features)
+        print(f"[{model_name}] deployable model trained, logging to MLflow...")
 
         # Persisted alongside the model so inference can standardize inputs
         # (and inverse-transform predictions) the exact same way training did.
@@ -131,6 +151,10 @@ def train_and_track(model_name, df, features, n_splits=5, min_train_fraction=0.5
             registry_name, registered.version, "walk_forward_rmse_mean", str(summary["rmse"]["mean"])
         )
         promoted = _maybe_promote(client, registry_name, registered.version, summary["rmse"]["mean"])
+        print(
+            f"[{model_name}] {'promoted to champion' if promoted else 'did not beat current champion'} "
+            f"(version {registered.version})"
+        )
 
     return {
         "model_name": model_name,
